@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownedMaps    BattleMap[]
+  sessions     SessionParticipant[]
+  characters   Character[]
+
+  @@map("users")
+}
+
+model BattleMap {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  width       Int      @default(20)
+  height      Int      @default(20)
+  gridSize    Int      @default(30)
+  background  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner     User      @relation(fields: [ownerId], references: [id])
+  ownerId   String
+  terrain   Terrain[]
+  entities  Entity[]
+  sessions  Session[]
+
+  @@map("battle_maps")
+}
+
+model Terrain {
+  id       String      @id @default(cuid())
+  x        Int
+  y        Int
+  type     TerrainType
+  color    String?
+  mapId    String
+  map      BattleMap   @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@map("terrain")
+}
+
+model Entity {
+  id        String     @id @default(cuid())
+  name      String
+  x         Int
+  y         Int
+  type      EntityType
+  size      Int        @default(1)
+  color     String     @default("#ff0000")
+  imageUrl  String?
+  hp        Int?
+  maxHp     Int?
+  ac        Int?
+  speed     Int?
+  mapId     String
+  map       BattleMap  @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@map("entities")
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  name        String
+  isActive    Boolean  @default(false)
+  currentTurn Int      @default(0)
+  round       Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  map           BattleMap             @relation(fields: [mapId], references: [id])
+  mapId         String
+  participants  SessionParticipant[]
+  initiative    InitiativeOrder[]
+
+  @@map("sessions")
+}
+
+model SessionParticipant {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+  role      Role   @default(PLAYER)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([sessionId, userId])
+  @@map("session_participants")
+}
+
+model Character {
+  id       String @id @default(cuid())
+  name     String
+  class    String?
+  level    Int    @default(1)
+  hp       Int
+  maxHp    Int
+  ac       Int
+  speed    Int    @default(30)
+  imageUrl String?
+  ownerId  String
+  owner    User   @relation(fields: [ownerId], references: [id])
+
+  @@map("characters")
+}
+
+model InitiativeOrder {
+  id         String @id @default(cuid())
+  sessionId  String
+  entityName String
+  initiative Int
+  entityId   String?
+  order      Int
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("initiative_order")
+}
+
+enum TerrainType {
+  WALL
+  DIFFICULT
+  WATER
+  LAVA
+  ICE
+  FOREST
+  MOUNTAIN
+  DESERT
+  SWAMP
+  CUSTOM
+}
+
+enum EntityType {
+  PLAYER
+  NPC
+  MONSTER
+  OBJECT
+}
+
+enum Role {
+  DM
+  PLAYER
+}
