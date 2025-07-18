@@ -9,7 +9,7 @@ const CreateMapSchema = z.object({
   height: z.number().min(1).max(100),
   gridSize: z.number().min(10).max(100),
   background: z.string().optional(),
-  ownerId: z.string(),
+  ownerId: z.string().optional(),
   terrain: z.array(z.object({
     x: z.number(),
     y: z.number(),
@@ -60,7 +60,25 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = CreateMapSchema.parse(body);
-    
+
+    // Create or get default user if no ownerId provided
+    let ownerId = data.ownerId;
+    if (!ownerId) {
+      let defaultUser = await prisma.user.findFirst({
+        where: { email: 'default@battlemap.local' }
+      });
+
+      if (!defaultUser) {
+        defaultUser = await prisma.user.create({
+          data: {
+            email: 'default@battlemap.local',
+            name: 'Default User'
+          }
+        });
+      }
+      ownerId = defaultUser.id;
+    }
+
     // Create map with terrain and entities
     const map = await prisma.battleMap.create({
       data: {
@@ -70,7 +88,7 @@ export async function POST(request: NextRequest) {
         height: data.height,
         gridSize: data.gridSize,
         background: data.background,
-        ownerId: data.ownerId,
+        ownerId,
         terrain: {
           create: data.terrain?.map((t) => ({
             x: t.x,

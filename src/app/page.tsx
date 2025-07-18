@@ -97,7 +97,7 @@ export default function HomePage() {
                 Create and manage battle maps for your campaigns
               </p>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <Link href="/editor">
                 <Button className="bg-blue-600 hover:bg-blue-700">
@@ -125,7 +125,7 @@ export default function HomePage() {
               </p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Sessions</CardTitle>
@@ -138,7 +138,7 @@ export default function HomePage() {
               </p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Sessions</CardTitle>
@@ -190,7 +190,7 @@ export default function HomePage() {
             <h2 className="text-xl font-semibold text-gray-900">
               Battle Maps
             </h2>
-            
+
             <div className="flex items-center space-x-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
@@ -212,7 +212,7 @@ export default function HomePage() {
                   {searchTerm ? 'No maps found' : 'No maps yet'}
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  {searchTerm 
+                  {searchTerm
                     ? 'Try adjusting your search terms'
                     : 'Create your first battle map to get started'
                   }
@@ -246,14 +246,14 @@ export default function HomePage() {
                         by {map.owner.name || map.owner.email}
                       </span>
                     </div>
-                    
+
                     <div className="flex space-x-2">
                       <Link href={`/editor/${map.id}`} className="flex-1">
                         <Button variant="outline" className="w-full">
                           Edit
                         </Button>
                       </Link>
-                      <Button 
+                      <Button
                         className="flex-1"
                         onClick={async () => {
                           try {
@@ -262,7 +262,7 @@ export default function HomePage() {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ mapId: map.id })
                             });
-                            
+
                             if (response.ok) {
                               const session = await response.json();
                               window.open(`/session/${session.id}`, '_blank');
@@ -286,3 +286,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+

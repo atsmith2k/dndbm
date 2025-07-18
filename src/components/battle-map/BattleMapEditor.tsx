@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Save, Download, Upload, Play, Settings } from 'lucide-react';
 import { useSocket } from '@/hooks/useSocket';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 interface BattleMapEditorProps {
   mapId?: string;
@@ -33,6 +34,9 @@ export default function BattleMapEditor({ mapId, sessionId, userId }: BattleMapE
       console.log(`Entity ${entityId} moved to`, position);
     }
   }) : null;
+
+  // Enable keyboard shortcuts
+  useKeyboardShortcuts();
 
   useEffect(() => {
     // Load map if mapId provided, otherwise create new map

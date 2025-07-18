@@ -1,5 +1,13 @@
 import { create } from 'zustand';
 import { BattleMapData, MapEntity, GridCell, Tool, Position } from '@/types/battle-map';
+import { historyManager } from '@/utils/history-manager';
+import {
+  createAddTerrainCommand,
+  createRemoveTerrainCommand,
+  createAddEntityCommand,
+  createRemoveEntityCommand,
+  createMoveEntityCommand
+} from '@/utils/command-factory';
 
 interface BattleMapStore {
   // Map state
@@ -9,6 +17,16 @@ interface BattleMapStore {
   isDrawing: boolean;
   zoom: number;
   pan: Position;
+
+  // History state
+  canUndo: boolean;
+  canRedo: boolean;
+
+  // Selection state
+  selectedCells: Position[];
+  selectedEntities: string[];
+  selectionMode: 'none' | 'rectangle' | 'lasso';
+  isSelecting: boolean;
   
   // Actions
   setCurrentMap: (map: BattleMapData) => void;
@@ -25,6 +43,28 @@ interface BattleMapStore {
   updateEntity: (id: string, updates: Partial<MapEntity>) => void;
   removeEntity: (id: string) => void;
   moveEntity: (id: string, position: Position) => void;
+
+  // Command-based operations (with history)
+  addTerrainWithHistory: (cell: GridCell) => void;
+  removeTerrainWithHistory: (position: Position) => void;
+  addEntityWithHistory: (entity: MapEntity) => void;
+  removeEntityWithHistory: (entityId: string) => void;
+  moveEntityWithHistory: (entityId: string, fromPosition: Position, toPosition: Position) => void;
+
+  // History operations
+  undo: () => void;
+  redo: () => void;
+  clearHistory: () => void;
+  updateHistoryState: () => void;
+
+  // Selection operations
+  setSelectionMode: (mode: 'none' | 'rectangle' | 'lasso') => void;
+  setIsSelecting: (selecting: boolean) => void;
+  addToSelection: (cells: Position[], entities: string[]) => void;
+  removeFromSelection: (cells: Position[], entities: string[]) => void;
+  clearSelection: () => void;
+  selectAll: () => void;
+  selectInRectangle: (start: Position, end: Position) => void;
   
   // Utility
   getEntityAt: (position: Position) => MapEntity | null;
@@ -39,6 +79,16 @@ export const useBattleMapStore = create<BattleMapStore>((set, get) => ({
   isDrawing: false,
   zoom: 1,
   pan: { x: 0, y: 0 },
+
+  // History state
+  canUndo: false,
+  canRedo: false,
+
+  // Selection state
+  selectedCells: [],
+  selectedEntities: [],
+  selectionMode: 'none',
+  isSelecting: false,
   
   // Actions
   setCurrentMap: (map) => set({ currentMap: map }),
@@ -124,5 +174,133 @@ export const useBattleMapStore = create<BattleMapStore>((set, get) => ({
     return state.currentMap.terrain.find(
       terrain => terrain.x === position.x && terrain.y === position.y
     ) || null;
-  }
+  },
+
+  // Command-based operations (with history)
+  addTerrainWithHistory: (cell) => {
+    const state = get();
+    const command = createAddTerrainCommand(cell, get());
+    historyManager.executeCommand(command);
+    get().updateHistoryState();
+  },
+
+  removeTerrainWithHistory: (position) => {
+    const state = get();
+    const previousCell = state.getTerrainAt(position);
+    const command = createRemoveTerrainCommand(position, previousCell || undefined, get());
+    historyManager.executeCommand(command);
+    get().updateHistoryState();
+  },
+
+  addEntityWithHistory: (entity) => {
+    const command = createAddEntityCommand(entity, get());
+    historyManager.executeCommand(command);
+    get().updateHistoryState();
+  },
+
+  removeEntityWithHistory: (entityId) => {
+    const state = get();
+    const entity = state.currentMap?.entities.find(e => e.id === entityId);
+    if (entity) {
+      const command = createRemoveEntityCommand(entity, get());
+      historyManager.executeCommand(command);
+      get().updateHistoryState();
+    }
+  },
+
+  moveEntityWithHistory: (entityId, fromPosition, toPosition) => {
+    const command = createMoveEntityCommand(entityId, fromPosition, toPosition, get());
+    historyManager.executeCommand(command);
+    get().updateHistoryState();
+  },
+
+  // History operations
+  undo: () => {
+    if (historyManager.undo()) {
+      get().updateHistoryState();
+    }
+  },
+
+  redo: () => {
+    if (historyManager.redo()) {
+      get().updateHistoryState();
+    }
+  },
+
+  clearHistory: () => {
+    historyManager.clear();
+    get().updateHistoryState();
+  },
+
+  updateHistoryState: () => {
+    set({
+      canUndo: historyManager.canUndo(),
+      canRedo: historyManager.canRedo()
+    });
+  },
+
+  // Selection operations
+  setSelectionMode: (mode) => set({ selectionMode: mode }),
+  setIsSelecting: (selecting) => set({ isSelecting: selecting }),
+
+  addToSelection: (cells, entities) => set((state) => ({
+    selectedCells: [...new Set([...state.selectedCells, ...cells])],
+    selectedEntities: [...new Set([...state.selectedEntities, ...entities])]
+  })),
+
+  removeFromSelection: (cells, entities) => set((state) => ({
+    selectedCells: state.selectedCells.filter(cell =>
+      !cells.some(c => c.x === cell.x && c.y === cell.y)
+    ),
+    selectedEntities: state.selectedEntities.filter(id => !entities.includes(id))
+  })),
+
+  clearSelection: () => set({
+    selectedCells: [],
+    selectedEntities: [],
+    isSelecting: false
+  }),
+
+  selectAll: () => set((state) => {
+    if (!state.currentMap) return state;
+
+    const allCells: Position[] = [];
+    for (let x = 0; x < state.currentMap.width; x++) {
+      for (let y = 0; y < state.currentMap.height; y++) {
+        allCells.push({ x, y });
+      }
+    }
+
+    return {
+      selectedCells: allCells,
+      selectedEntities: state.currentMap.entities.map(e => e.id)
+    };
+  }),
+
+  selectInRectangle: (start, end) => set((state) => {
+    if (!state.currentMap) return state;
+
+    const minX = Math.min(start.x, end.x);
+    const maxX = Math.max(start.x, end.x);
+    const minY = Math.min(start.y, end.y);
+    const maxY = Math.max(start.y, end.y);
+
+    const selectedCells: Position[] = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        if (x >= 0 && x < state.currentMap.width && y >= 0 && y < state.currentMap.height) {
+          selectedCells.push({ x, y });
+        }
+      }
+    }
+
+    const selectedEntities = state.currentMap.entities
+      .filter(entity =>
+        entity.position.x >= minX && entity.position.x <= maxX &&
+        entity.position.y >= minY && entity.position.y <= maxY
+      )
+      .map(entity => entity.id);
+
+    return { selectedCells, selectedEntities };
+  })
 }));

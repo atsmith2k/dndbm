@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -47,7 +47,7 @@ model Terrain {
   id       String      @id @default(cuid())
   x        Int
   y        Int
-  type     TerrainType
+  type     String
   color    String?
   mapId    String
   map      BattleMap   @relation(fields: [mapId], references: [id], onDelete: Cascade)
@@ -60,7 +60,7 @@ model Entity {
   name      String
   x         Int
   y         Int
-  type      EntityType
+  type      String
   size      Int        @default(1)
   color     String     @default("#ff0000")
   imageUrl  String?
@@ -96,7 +96,7 @@ model SessionParticipant {
   id        String @id @default(cuid())
   sessionId String
   userId    String
-  role      Role   @default(PLAYER)
+  role      String @default("PLAYER")
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id])
@@ -134,27 +134,7 @@ model InitiativeOrder {
   @@map("initiative_order")
 }
 
-enum TerrainType {
-  WALL
-  DIFFICULT
-  WATER
-  LAVA
-  ICE
-  FOREST
-  MOUNTAIN
-  DESERT
-  SWAMP
-  CUSTOM
-}
-
-enum EntityType {
-  PLAYER
-  NPC
-  MONSTER
-  OBJECT
-}
-
-enum Role {
-  DM
-  PLAYER
-}
+// Note: SQLite doesn't support enums, so we use strings with validation in the application
+// Valid TerrainType values: WALL, DIFFICULT, WATER, LAVA, ICE, FOREST, MOUNTAIN, DESERT, SWAMP, CUSTOM
+// Valid EntityType values: PLAYER, NPC, MONSTER, OBJECT
+// Valid Role values: DM, PLAYER
