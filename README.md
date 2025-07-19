@@ -1,17 +1,27 @@
 # D&D Battle Map Creator
 
-A complete, production-ready Next.js 14 application for creating and managing D&D battle maps with real-time multiplayer support.
+A complete, production-ready Next.js 14 application for creating and managing D&D battle maps with comprehensive real-time multiplayer support.
 
 ## Features
 
 ### Core Features
 - **Interactive Battle Map Editor**: Canvas-based map editing with Konva.js
-- **Real-time Multiplayer**: Live sessions with Socket.io
+- **Real-time Multiplayer**: Live sessions with Socket.io and role-based permissions
+- **Session Management**: Join codes, lobbies, and participant management
+- **Role-Based Access Control**: DM vs Player permissions with UI indicators
 - **Terrain Tools**: Multiple terrain types (walls, water, lava, forest, etc.)
 - **Entity Management**: Place and manage players, NPCs, monsters, and objects
 - **Initiative Tracking**: Built-in turn order management
 - **Chat System**: Real-time chat with dice rolling
 - **Import/Export**: Save and share maps as JSON files
+
+### Multiplayer Session System
+- **Join Code System**: 6-character alphanumeric codes for easy session access
+- **Session Persistence**: Maintains state during temporary disconnections
+- **Session Expiration**: Automatic cleanup after 24 hours of inactivity
+- **User Presence**: Live cursors and connection status indicators
+- **Conflict Resolution**: Handles simultaneous edits with optimistic updates
+- **Mobile Responsive**: Touch-friendly interface for players on phones/tablets
 
 ### Technical Features
 - **Next.js 14 App Router**: Modern React framework with server components
@@ -65,6 +75,13 @@ Navigate to `http://localhost:3000`
 
 ## Usage
 
+### Demo the Session System
+Visit `/demo` to experience the full multiplayer functionality:
+- Create sessions from demo maps
+- Join sessions using 6-character codes
+- Experience role-based permissions
+- Test real-time synchronization
+
 ### Creating a Battle Map
 1. Click "New Map" from the dashboard
 2. Use the toolbar to select terrain and entity tools
@@ -72,18 +89,34 @@ Navigate to `http://localhost:3000`
 4. Drag entities to move them around
 5. Save your map when finished
 
-### Starting a Live Session
+### Creating a Multiplayer Session
 1. Open a saved map in the editor
-2. Click "Start Session"
-3. Share the session URL with players
-4. Use the initiative tracker to manage turn order
-5. Chat with players in real-time
+2. Click "Start Session" to create a live session
+3. A unique 6-character join code is generated
+4. Share the join code with your players
+5. Manage participants in the session lobby
+6. Assign player characters and roles
+7. Start the session when everyone is ready
 
-### Managing Entities
-- Click entities to select and view details
-- Use the entity panel to edit properties (HP, AC, etc.)
-- Drag entities to move them during gameplay
-- Right-click for additional options
+### Joining a Session as a Player
+1. Get the join code from your Dungeon Master
+2. Visit the join session interface
+3. Enter the 6-character code
+4. Provide a display name
+5. Wait in the lobby for the session to start
+6. Interact with the map based on your assigned role
+
+### Role-Based Permissions
+- **Dungeon Master (DM)**: Full control over the map, can move any entity, modify terrain, manage participants
+- **Player**: Can only move assigned character tokens, view-only access to other elements
+- **Observer**: Can view the session but cannot make changes
+
+### Session Management Features
+- **Live Participant List**: See who's connected and their roles
+- **Real-time Cursors**: Track other users' mouse movements
+- **Permission Validation**: Server-side enforcement of role restrictions
+- **Automatic Reconnection**: Seamless recovery from network issues
+- **Session Expiration**: Automatic cleanup after 24 hours of inactivity
 
 ## Development
 

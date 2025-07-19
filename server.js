@@ -12,6 +12,7 @@ const handle = app.getRequestHandler();
 
 // Store active sessions and their data
 const sessions = new Map();
+const userPresence = new Map(); // userId -> { sessionId, socketId, cursor, lastActivity }
 
 app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
@@ -33,14 +34,73 @@ app.prepare().then(() => {
     }
   });
 
+  // Helper function to get user role in session
+  async function getUserRole(sessionId, userId) {
+    try {
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+
+      const participant = await prisma.sessionParticipant.findUnique({
+        where: {
+          sessionId_userId: {
+            sessionId,
+            userId
+          }
+        }
+      });
+
+      await prisma.$disconnect();
+      return participant?.role || null;
+    } catch (error) {
+      console.error('Error getting user role:', error);
+      return null;
+    }
+  }
+
+  // Helper function to check permissions
+  function hasPermission(role, permission) {
+    const ROLE_PERMISSIONS = {
+      DM: {
+        canEditMap: true,
+        canMoveAnyEntity: true,
+        canManageParticipants: true,
+        canControlSession: true,
+        canModifyTerrain: true
+      },
+      PLAYER: {
+        canEditMap: false,
+        canMoveAnyEntity: false,
+        canManageParticipants: false,
+        canControlSession: false,
+        canModifyTerrain: false,
+        canMoveAssignedCharacter: true
+      }
+    };
+
+    return ROLE_PERMISSIONS[role]?.[permission] === true;
+  }
+
   // Socket.io event handlers
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
-    // Join session
-    socket.on('join-session', (sessionId, userId) => {
+    // Join session with enhanced presence tracking
+    socket.on('join-session', async (sessionId, userId, displayName) => {
       socket.join(sessionId);
-      
+
+      // Store user presence
+      userPresence.set(userId, {
+        sessionId,
+        socketId: socket.id,
+        displayName: displayName || 'Anonymous',
+        cursor: null,
+        lastActivity: new Date(),
+        isConnected: true
+      });
+
+      // Get user role
+      const role = await getUserRole(sessionId, userId);
+
       if (!sessions.has(sessionId)) {
         sessions.set(sessionId, {
           id: sessionId,
@@ -49,41 +109,118 @@ app.prepare().then(() => {
           round: 1
         });
       }
-      
+
       const session = sessions.get(sessionId);
-      if (!session.participants.includes(userId)) {
-        session.participants.push(userId);
+      if (!session.participants.find(p => p.userId === userId)) {
+        session.participants.push({
+          userId,
+          displayName: displayName || 'Anonymous',
+          role: role || 'PLAYER',
+          isConnected: true,
+          socketId: socket.id
+        });
       }
 
-      socket.to(sessionId).emit('user-joined', userId);
-      console.log(`User ${userId} joined session ${sessionId}`);
+      // Notify others of user joining
+      socket.to(sessionId).emit('user-joined', {
+        userId,
+        displayName: displayName || 'Anonymous',
+        role: role || 'PLAYER',
+        isConnected: true
+      });
+
+      // Send current session state to joining user
+      socket.emit('session-state', {
+        session,
+        connectedUsers: session.participants.filter(p => p.isConnected)
+      });
+
+      console.log(`User ${userId} (${role}) joined session ${sessionId}`);
     });
 
-    // Leave session
+    // Leave session with presence cleanup
     socket.on('leave-session', (sessionId, userId) => {
       socket.leave(sessionId);
-      
+
+      // Update user presence
+      if (userPresence.has(userId)) {
+        const presence = userPresence.get(userId);
+        presence.isConnected = false;
+        presence.lastActivity = new Date();
+      }
+
       const session = sessions.get(sessionId);
       if (session) {
-        session.participants = session.participants.filter(id => id !== userId);
+        const participant = session.participants.find(p => p.userId === userId);
+        if (participant) {
+          participant.isConnected = false;
+        }
       }
 
       socket.to(sessionId).emit('user-left', userId);
+      console.log(`User ${userId} left session ${sessionId}`);
     });
 
-    // Map updates
-    socket.on('map-update', (sessionId, mapData) => {
-      socket.to(sessionId).emit('map-updated', mapData);
+    // Cursor movement tracking
+    socket.on('cursor-move', (sessionId, userId, position) => {
+      if (userPresence.has(userId)) {
+        const presence = userPresence.get(userId);
+        presence.cursor = position;
+        presence.lastActivity = new Date();
+      }
+
+      socket.to(sessionId).emit('cursor-moved', userId, position);
     });
 
-    // Entity movement
-    socket.on('entity-move', (sessionId, entityId, position) => {
-      socket.to(sessionId).emit('entity-moved', entityId, position);
+    // Map updates with permission checking
+    socket.on('map-update', async (sessionId, mapData, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canEditMap')) {
+        socket.emit('permission-denied', 'map-update', 'Insufficient permissions');
+        return;
+      }
+
+      socket.to(sessionId).emit('map-updated', mapData, userId);
     });
 
-    // Entity updates
-    socket.on('entity-update', (sessionId, entity) => {
-      socket.to(sessionId).emit('entity-updated', entity);
+    // Entity movement with permission checking
+    socket.on('entity-move', async (sessionId, entityId, position, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      // Check if user can move this entity
+      if (!hasPermission(role, 'canMoveAnyEntity')) {
+        // For players, check if it's their assigned character
+        // This would need additional logic to check entity ownership
+        socket.emit('permission-denied', 'entity-move', 'Cannot move this entity');
+        return;
+      }
+
+      socket.to(sessionId).emit('entity-moved', entityId, position, userId);
+    });
+
+    // Entity updates with permission checking
+    socket.on('entity-update', async (sessionId, entity, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canEditMap')) {
+        socket.emit('permission-denied', 'entity-update', 'Insufficient permissions');
+        return;
+      }
+
+      socket.to(sessionId).emit('entity-updated', entity, userId);
+    });
+
+    // Terrain updates with permission checking
+    socket.on('terrain-update', async (sessionId, terrain, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canModifyTerrain')) {
+        socket.emit('permission-denied', 'terrain-update', 'Insufficient permissions');
+        return;
+      }
+
+      socket.to(sessionId).emit('terrain-updated', terrain, userId);
     });
 
     // Initiative updates
@@ -108,9 +245,94 @@ app.prepare().then(() => {
       io.to(sessionId).emit('chat-message', message);
     });
 
-    // Disconnect
+    // Role management (DM only)
+    socket.on('update-role', async (sessionId, targetUserId, newRole, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canManageParticipants')) {
+        socket.emit('permission-denied', 'update-role', 'Insufficient permissions');
+        return;
+      }
+
+      // Update role in session data
+      const session = sessions.get(sessionId);
+      if (session) {
+        const participant = session.participants.find(p => p.userId === targetUserId);
+        if (participant) {
+          participant.role = newRole;
+        }
+      }
+
+      io.to(sessionId).emit('role-updated', targetUserId, newRole, userId);
+    });
+
+    // Character assignment (DM only)
+    socket.on('assign-character', async (sessionId, targetUserId, characterId, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canManageParticipants')) {
+        socket.emit('permission-denied', 'assign-character', 'Insufficient permissions');
+        return;
+      }
+
+      io.to(sessionId).emit('character-assigned', targetUserId, characterId, userId);
+    });
+
+    // Kick participant (DM only)
+    socket.on('kick-participant', async (sessionId, targetUserId, userId) => {
+      const role = await getUserRole(sessionId, userId);
+
+      if (!hasPermission(role, 'canManageParticipants')) {
+        socket.emit('permission-denied', 'kick-participant', 'Insufficient permissions');
+        return;
+      }
+
+      // Remove from session
+      const session = sessions.get(sessionId);
+      if (session) {
+        session.participants = session.participants.filter(p => p.userId !== targetUserId);
+      }
+
+      // Remove from presence
+      userPresence.delete(targetUserId);
+
+      // Find target socket and disconnect
+      const targetPresence = Array.from(userPresence.values()).find(p => p.userId === targetUserId);
+      if (targetPresence) {
+        const targetSocket = io.sockets.sockets.get(targetPresence.socketId);
+        if (targetSocket) {
+          targetSocket.leave(sessionId);
+          targetSocket.emit('kicked-from-session', sessionId, userId);
+        }
+      }
+
+      io.to(sessionId).emit('participant-kicked', targetUserId, userId);
+    });
+
+    // Disconnect with cleanup
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
+
+      // Find and update user presence
+      for (const [userId, presence] of userPresence.entries()) {
+        if (presence.socketId === socket.id) {
+          presence.isConnected = false;
+          presence.lastActivity = new Date();
+
+          // Update session participants
+          const session = sessions.get(presence.sessionId);
+          if (session) {
+            const participant = session.participants.find(p => p.userId === userId);
+            if (participant) {
+              participant.isConnected = false;
+            }
+
+            // Notify others of disconnection
+            socket.to(presence.sessionId).emit('user-disconnected', userId);
+          }
+          break;
+        }
+      }
     });
   });
 

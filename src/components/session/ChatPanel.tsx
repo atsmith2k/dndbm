@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChatMessage } from '@/types/battle-map';
+import { ChatMessage } from '@/types/session';
 import { Send, Dice6 } from 'lucide-react';
 import { useSocket } from '@/hooks/useSocket';
 
@@ -16,7 +16,7 @@ interface ChatPanelProps {
 export default function ChatPanel({ sessionId, userId }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [userName] = useState('Player'); // TODO: Get from auth
+  const [displayName] = useState('Player'); // TODO: Get from auth
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const socket = useSocket({
@@ -40,8 +40,9 @@ export default function ChatPanel({ sessionId, userId }: ChatPanelProps) {
 
     const message: ChatMessage = {
       id: `msg-${Date.now()}`,
+      sessionId,
       userId,
-      userName,
+      displayName,
       message: newMessage,
       timestamp: new Date(),
       type: 'chat'
@@ -56,8 +57,9 @@ export default function ChatPanel({ sessionId, userId }: ChatPanelProps) {
     const roll = Math.floor(Math.random() * sides) + 1;
     const message: ChatMessage = {
       id: `roll-${Date.now()}`,
+      sessionId,
       userId,
-      userName,
+      displayName,
       message: `rolled a d${sides}: ${roll}`,
       timestamp: new Date(),
       type: 'roll'
@@ -99,7 +101,7 @@ export default function ChatPanel({ sessionId, userId }: ChatPanelProps) {
             <div key={message.id} className="space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-900">
-                  {message.userName}
+                  {message.displayName}
                 </span>
                 <span className="text-xs text-gray-500">
                   {formatTime(message.timestamp)}
