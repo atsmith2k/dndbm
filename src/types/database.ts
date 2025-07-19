@@ -15,6 +15,28 @@ export type SessionWithRelations = Session & {
   initiative: InitiativeOrder[];
 };
 
+// Enhanced session type with new fields
+export type EnhancedSession = Session & {
+  joinCode: string;
+  expiresAt: Date | null;
+  lastActivity: Date;
+};
+
+export type EnhancedSessionParticipant = SessionParticipant & {
+  assignedCharacterId: string | null;
+  displayName: string | null;
+  isConnected: boolean;
+  lastSeen: Date;
+};
+
+export type SessionWithEnhancedRelations = EnhancedSession & {
+  map: BattleMapWithRelations;
+  participants: (EnhancedSessionParticipant & {
+    user: Pick<User, 'id' | 'name' | 'email'>;
+  })[];
+  initiative: InitiativeOrder[];
+};
+
 export type EntityWithMap = Entity & {
   map: BattleMap;
 };

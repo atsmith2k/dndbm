@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { generateUniqueJoinCode, getSessionExpiration } from '@/lib/session-utils';
 
 const CreateSessionSchema = z.object({
   name: z.string().optional(),
   mapId: z.string(),
-  userId: z.string().optional()
+  userId: z.string(),
+  expiresAt: z.string().datetime().optional()
 });
 
 export async function GET() {
@@ -47,13 +49,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = CreateSessionSchema.parse(body);
-    
-    // Check if map exists
+
+    // Check if map exists and user owns it
     const map = await prisma.battleMap.findUnique({
       where: { id: data.mapId },
       include: {
         terrain: true,
-        entities: true
+        entities: true,
+        owner: {
+          select: { id: true, name: true, email: true }
+        }
       }
     });
 
@@ -64,12 +69,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify user owns the map (for now, allow any user to create sessions)
+    // if (map.ownerId !== data.userId) {
+    //   return NextResponse.json(
+    //     { error: 'You can only create sessions for your own maps' },
+    //     { status: 403 }
+    //   );
+    // }
+
+    // Generate unique join code
+    const joinCode = await generateUniqueJoinCode();
+
+    // Set expiration time
+    const expiresAt = data.expiresAt ? new Date(data.expiresAt) : getSessionExpiration();
+
     // Create session
     const session = await prisma.session.create({
       data: {
         name: data.name || `Session for ${map.name}`,
         mapId: data.mapId,
-        isActive: true
+        joinCode,
+        isActive: true,
+        expiresAt,
+        lastActivity: new Date()
       },
       include: {
         map: {
@@ -92,7 +114,42 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    return NextResponse.json(session);
+    // Add the creator as DM
+    await prisma.sessionParticipant.create({
+      data: {
+        sessionId: session.id,
+        userId: data.userId,
+        role: 'DM',
+        isConnected: true,
+        lastSeen: new Date()
+      }
+    });
+
+    // Fetch updated session with participants
+    const updatedSession = await prisma.session.findUnique({
+      where: { id: session.id },
+      include: {
+        map: {
+          include: {
+            terrain: true,
+            entities: true,
+            owner: {
+              select: { id: true, name: true, email: true }
+            }
+          }
+        },
+        participants: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true }
+            }
+          }
+        },
+        initiative: true
+      }
+    });
+
+    return NextResponse.json(updatedSession);
   } catch (error) {
     console.error('Failed to create session:', error);
     

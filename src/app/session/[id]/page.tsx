@@ -1,84 +1,96 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import BattleMapEditor from '@/components/battle-map/BattleMapEditor';
-import InitiativeTracker from '@/components/session/InitiativeTracker';
-import ChatPanel from '@/components/session/ChatPanel';
-import { SessionWithRelations } from '@/types/database';
+import SessionLobby from '@/components/session/SessionLobby';
+import { SessionData, Role } from '@/types/session';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Play, Pause, RotateCcw } from 'lucide-react';
+import { Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 
-interface SessionPageProps {
-  params: {
-    id: string;
-  };
-}
+export default function SessionPage() {
+  const params = useParams();
+  const router = useRouter();
+  const sessionId = params.id as string;
 
-export default function SessionPage({ params }: SessionPageProps) {
-  const [session, setSession] = useState<SessionWithRelations | null>(null);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // For demo purposes, using a temporary user ID
-  const userId = 'temp-user-id';
+  const [currentUserId] = useState('temp-user-id'); // TODO: Get from auth
+  const [userRole, setUserRole] = useState<Role | null>(null);
+  const [showLobby, setShowLobby] = useState(true);
 
   useEffect(() => {
     loadSession();
-  }, [params.id]);
+  }, [sessionId]);
 
   const loadSession = async () => {
     try {
-      const response = await fetch(`/api/sessions/${params.id}`);
-      if (response.ok) {
-        const sessionData = await response.json();
-        setSession(sessionData);
-      } else {
-        setError('Session not found');
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/sessions/${sessionId}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Session not found');
+        }
+        throw new Error('Failed to load session');
       }
+
+      const sessionData = await response.json();
+      setSession(sessionData);
+
+      // Find current user's role
+      const participant = sessionData.participants.find(
+        (p: any) => p.userId === currentUserId
+      );
+      setUserRole(participant?.role || null);
+
+      // Show lobby if session is not active
+      setShowLobby(!sessionData.isActive);
+
     } catch (error) {
       console.error('Failed to load session:', error);
-      setError('Failed to load session');
+      setError(error instanceof Error ? error.message : 'Failed to load session');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleSession = async () => {
+  const handleStartSession = async () => {
     if (!session) return;
 
     try {
-      const response = await fetch(`/api/sessions/${session.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !session.isActive })
+        body: JSON.stringify({ isActive: true })
       });
 
       if (response.ok) {
         const updatedSession = await response.json();
         setSession(updatedSession);
+        setShowLobby(false);
       }
     } catch (error) {
-      console.error('Failed to toggle session:', error);
+      console.error('Failed to start session:', error);
     }
   };
 
-  const resetSession = async () => {
-    if (!session) return;
+  const handleUpdateRole = async (userId: string, newRole: Role) => {
+    // This would be handled by the socket in a real implementation
+    // TODO: Implement role update via socket
+  };
 
-    try {
-      const response = await fetch(`/api/sessions/${session.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentTurn: 0, round: 1 })
-      });
+  const handleKickParticipant = async (userId: string) => {
+    // This would be handled by the socket in a real implementation
+    // TODO: Implement participant kicking via socket
+  };
 
-      if (response.ok) {
-        const updatedSession = await response.json();
-        setSession(updatedSession);
-      }
-    } catch (error) {
-      console.error('Failed to reset session:', error);
+  const handleLeaveSession = () => {
+    if (confirm('Are you sure you want to leave this session?')) {
+      router.push('/');
     }
   };
 
@@ -86,103 +98,108 @@ export default function SessionPage({ params }: SessionPageProps) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading session...</p>
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading session...</p>
         </div>
       </div>
     );
   }
 
-  if (error || !session) {
+  if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Card className="w-96">
-          <CardHeader>
-            <CardTitle className="text-center text-red-600">Error</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-gray-600 mb-4">{error || 'Session not found'}</p>
-            <Button onClick={() => window.location.href = '/'}>
-              Return Home
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-xl font-semibold mb-2">Session Error</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <div className="space-x-2">
+            <Button onClick={loadSession} variant="outline">
+              Try Again
             </Button>
-          </CardContent>
-        </Card>
+            <Button onClick={() => router.push('/')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Go Home
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-gray-600">Session not found</p>
+          <Button onClick={() => router.push('/')} className="mt-4">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Go Home
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if user is in session
+  const isParticipant = session.participants.some(p => p.userId === currentUserId);
+
+  if (!isParticipant) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h1 className="text-xl font-semibold mb-2">Access Denied</h1>
+          <p className="text-gray-600 mb-4">
+            You are not a participant in this session. Please use the correct join code to join.
+          </p>
+          <Button onClick={() => router.push('/')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Go Home
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Session Header */}
-      <div className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{session.name}</h1>
-            <p className="text-sm text-gray-600">
-              Map: {session.map.name} • Round {session.round} • 
-              <span className={`ml-1 ${session.isActive ? 'text-green-600' : 'text-red-600'}`}>
-                {session.isActive ? 'Active' : 'Paused'}
-              </span>
-            </p>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center text-sm text-gray-600">
-              <Users size={16} className="mr-1" />
-              {session.participants.length} participants
-            </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleSession}
-            >
-              {session.isActive ? (
-                <>
-                  <Pause size={16} className="mr-1" />
-                  Pause
-                </>
-              ) : (
-                <>
-                  <Play size={16} className="mr-1" />
-                  Resume
-                </>
-              )}
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={resetSession}
-            >
-              <RotateCcw size={16} className="mr-1" />
-              Reset
-            </Button>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      {showLobby ? (
+        <SessionLobby
+          session={session}
+          currentUserId={currentUserId}
+          currentUserRole={userRole}
+          onStartSession={handleStartSession}
+          onUpdateRole={handleUpdateRole}
+          onKickParticipant={handleKickParticipant}
+          onLeaveSession={handleLeaveSession}
+        />
+      ) : (
+        <>
+          {/* Session Active Alert */}
+          <Alert className="m-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Session is now active! You can interact with the battle map.
+              <Button
+                variant="link"
+                className="p-0 h-auto ml-2"
+                onClick={() => setShowLobby(true)}
+              >
+                View Lobby
+              </Button>
+            </AlertDescription>
+          </Alert>
 
-      {/* Main Content */}
-      <div className="flex-1 flex">
-        {/* Left Sidebar - Initiative Tracker */}
-        <div className="w-80 bg-white border-r border-gray-200">
-          <InitiativeTracker sessionId={session.id} />
-        </div>
-
-        {/* Center - Battle Map */}
-        <div className="flex-1">
-          <BattleMapEditor 
-            mapId={session.map.id}
-            sessionId={session.id}
-            userId={userId}
+          {/* Battle Map Editor */}
+          <BattleMapEditor
+            mapId={session.mapId}
+            sessionId={sessionId}
+            userId={currentUserId}
+            session={session}
+            userRole={userRole}
           />
-        </div>
-
-        {/* Right Sidebar - Chat */}
-        <div className="w-80 bg-white border-l border-gray-200">
-          <ChatPanel sessionId={session.id} userId={userId} />
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
